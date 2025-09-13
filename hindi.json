@@ -1,0 +1,21 @@
+{
+  "language": "hi-IN",
+  "words": [
+    {
+      "term": "मेरा नाम जूल्स है।",
+      "definition": "My name is Jules."
+    },
+    {
+      "term": "बिल्ली सो रही है।",
+      "definition": "The cat is sleeping."
+    },
+    {
+      "term": "मैं एक कॉफ़ी ऑर्डर करना चाहूँगा।",
+      "definition": "I would like to order a coffee."
+    },
+    {
+      "term": "यह एक अच्छी किताब है।",
+      "definition": "This is a good book."
+    }
+  ]
+}
