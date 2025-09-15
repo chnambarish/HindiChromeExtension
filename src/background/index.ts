@@ -43,12 +43,20 @@ async function setupDailyReviewAlarm(): Promise<void> {
     // Clear existing alarm
     await chrome.alarms.clear('dailyReviewCheck');
     
-    // Create new alarm that fires every day at 9 AM
+    // Get user's preferred review time
+    const config = await StorageManager.getUserConfig();
+    
+    if (!config.reviewRemindersEnabled) {
+      console.log('Review reminders are disabled');
+      return;
+    }
+    
+    // Create new alarm that fires every day at user's preferred time
     const now = new Date();
     const scheduledTime = new Date();
-    scheduledTime.setHours(9, 0, 0, 0);
+    scheduledTime.setHours(config.dailyReviewTime, 0, 0, 0);
     
-    // If 9 AM has passed today, schedule for tomorrow
+    // If the review time has passed today, schedule for tomorrow
     if (scheduledTime <= now) {
       scheduledTime.setDate(scheduledTime.getDate() + 1);
     }
@@ -58,10 +66,19 @@ async function setupDailyReviewAlarm(): Promise<void> {
       periodInMinutes: 24 * 60, // Repeat every 24 hours
     });
     
-    console.log('Daily review alarm scheduled for:', scheduledTime.toLocaleString());
+    const timeString = scheduledTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    console.log(`Daily review alarm scheduled for ${timeString} daily`);
   } catch (error) {
     console.error('Error setting up daily alarm:', error);
   }
+}
+
+/**
+ * Reschedule daily review alarm (called when user changes settings)
+ */
+export async function rescheduleReviewAlarm(): Promise<void> {
+  console.log('Rescheduling review alarm based on updated settings');
+  await setupDailyReviewAlarm();
 }
 
 
@@ -83,8 +100,8 @@ async function checkAndNotifyDueReviews(): Promise<void> {
     // Get user configuration
     const config = await StorageManager.getUserConfig();
     
-    if (!config.notificationsEnabled) {
-      console.log('Notifications are disabled');
+    if (!config.notificationsEnabled || !config.reviewRemindersEnabled) {
+      console.log('Notifications or review reminders are disabled');
       return;
     }
     
@@ -230,6 +247,20 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name === 'laterReminder') {
     console.log('Later reminder triggered');
     await checkAndNotifyDueReviews();
+  }
+});
+
+// Handle messages from options page
+chrome.runtime.onMessage.addListener(async (request, sender, sendResponse) => {
+  if (request.type === 'RESCHEDULE_REVIEW_ALARM') {
+    try {
+      await rescheduleReviewAlarm();
+      sendResponse({ success: true });
+    } catch (error) {
+      console.error('Error rescheduling alarm:', error);
+      sendResponse({ success: false, error: error instanceof Error ? error.message : 'Unknown error' });
+    }
+    return true; // Keep the message channel open for async response
   }
 });
 

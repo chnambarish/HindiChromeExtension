@@ -6,7 +6,7 @@ import { SM2Engine } from '../srs-engine';
 const mockLocalStorage: Record<string, any> = {};
 const mockSyncStorage: Record<string, any> = {};
 
-global.chrome = {
+(global as any).chrome = {
   runtime: {
     getManifest: jest.fn().mockReturnValue({ version: '1.0.0' }),
     lastError: undefined
@@ -89,7 +89,7 @@ global.chrome = {
 } as any;
 
 // Mock console methods
-global.console = {
+(global as any).console = {
   ...console,
   log: jest.fn(),
   warn: jest.fn(),
@@ -392,7 +392,7 @@ describe('StorageManager', () => {
 
   describe('Import Vocabulary', () => {
     test('should import valid vocabulary items', async () => {
-      const newItem = {
+      const newItem: Partial<VocabularyItem> = {
         id: 'new-item',
         targetLanguageWord: 'धन्यवाद',
         englishTranslation: 'thank you',
@@ -592,10 +592,7 @@ describe('StorageManager', () => {
     });
 
     test('should clear all data', async () => {
-      // Mock sync storage
-      (global.chrome as any).storage.sync = {
-        clear: jest.fn()
-      };
+      // Mock sync storage already available globally
 
       await StorageManager.clearAllData();
       expect(chrome.storage.local.clear).toHaveBeenCalled();
@@ -606,10 +603,7 @@ describe('StorageManager', () => {
       (chrome.storage.local.getBytesInUse as jest.Mock).mockResolvedValue(1024);
       (chrome.storage.sync.getBytesInUse as jest.Mock).mockResolvedValue(512);
       
-      // Mock sync storage
-      (global.chrome as any).storage.sync = {
-        getBytesInUse: jest.fn().mockResolvedValue(512)
-      };
+      // Mock sync storage already available globally
 
       const usage = await StorageManager.getStorageUsage();
       expect(usage).toEqual({ local: 1024, sync: 512 });

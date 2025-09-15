@@ -1,9 +1,22 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { resolve } from 'path';
+import { copyFileSync } from 'fs';
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    react(),
+    {
+      name: 'copy-background',
+      writeBundle() {
+        // Copy the plain JavaScript background script
+        copyFileSync(
+          resolve(__dirname, 'src/background/background.js'),
+          resolve(__dirname, 'dist/background.js')
+        );
+      },
+    },
+  ],
   resolve: {
     alias: {
       '@': resolve(__dirname, 'src'),
@@ -14,19 +27,13 @@ export default defineConfig({
       input: {
         popup: resolve(__dirname, 'src/popup/popup.html'),
         options: resolve(__dirname, 'src/options/options.html'),
-        background: resolve(__dirname, 'src/background/index.ts'),
       },
       output: {
-        entryFileNames: (chunk) => {
-          if (chunk.name === 'background') {
-            return 'background.js';
-          }
-          return `${chunk.name}/[name].js`;
-        },
+        entryFileNames: `[name]/[name].js`,
         chunkFileNames: 'chunks/[name].[hash].js',
         assetFileNames: (asset) => {
           if (asset.name?.endsWith('.html')) {
-            return '[name].[ext]';
+            return 'src/[name]/[name].[ext]';
           }
           return 'assets/[name].[hash].[ext]';
         },

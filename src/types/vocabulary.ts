@@ -130,4 +130,10 @@ export interface UserConfig {
   
   /** New word repetitions before considering learned */
   newWordRepetitions: number;
+  
+  /** Daily review time in hours (24-hour format) */
+  dailyReviewTime: number;
+  
+  /** Enable daily review reminders */
+  reviewRemindersEnabled: boolean;
 }

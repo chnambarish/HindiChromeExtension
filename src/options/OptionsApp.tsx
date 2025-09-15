@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { UserConfig, LearningStats, VocabularyItem } from '@/types';
+import { StorageManager } from '@/utils/storage';
 
 export const OptionsApp: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'vocabulary' | 'settings' | 'stats'>('vocabulary');
@@ -7,6 +8,12 @@ export const OptionsApp: React.FC = () => {
   const [stats, setStats] = useState<LearningStats | null>(null);
   const [vocabulary, setVocabulary] = useState<VocabularyItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [newWord, setNewWord] = useState({ 
+    targetLanguageWord: '', 
+    englishTranslation: '', 
+    tags: '' 
+  });
 
   useEffect(() => {
     loadData();
@@ -15,51 +22,20 @@ export const OptionsApp: React.FC = () => {
   const loadData = async () => {
     try {
       setLoading(true);
-      // TODO: Load data from storage
       
-      // Mock data for now
-      const mockConfig: UserConfig = {
-        ttsVoice: 'Google Hindi',
-        speechRate: 0.8,
-        speechPitch: 1.0,
-        notificationsEnabled: true,
-        quietHoursStart: 22,
-        quietHoursEnd: 8,
-        targetLanguage: 'hi-IN',
-        newWordRepetitions: 3,
-      };
-
-      const mockStats: LearningStats = {
-        totalItems: 25,
-        dueToday: 5,
-        newToday: 2,
-        reviewedToday: 8,
-        accuracyRate: 0.87,
-        streak: 12,
-        totalReviews: 156,
-      };
-
-      const mockVocabulary: VocabularyItem[] = [
-        {
-          id: '1',
-          targetLanguageWord: 'नमस्ते',
-          englishTranslation: 'Hello',
-          tags: ['greetings'],
-          srsData: {
-            nextReviewDate: Date.now() + 86400000,
-            interval: 2,
-            repetitions: 1,
-            easeFactor: 2.5,
-            lastReviewed: Date.now() - 86400000,
-            createdAt: Date.now() - 172800000,
-            updatedAt: Date.now() - 86400000,
-          },
-        },
-      ];
-
-      setConfig(mockConfig);
-      setStats(mockStats);
-      setVocabulary(mockVocabulary);
+      // Initialize storage if needed
+      await StorageManager.initialize();
+      
+      // Load real data from storage
+      const [userConfig, learningStats, vocabularyItems] = await Promise.all([
+        StorageManager.getUserConfig(),
+        StorageManager.getLearningStats(),
+        StorageManager.getVocabulary(),
+      ]);
+      
+      setConfig(userConfig);
+      setStats(learningStats);
+      setVocabulary(vocabularyItems);
     } catch (error) {
       console.error('Failed to load data:', error);
     } finally {
@@ -74,25 +50,123 @@ export const OptionsApp: React.FC = () => {
     try {
       const text = await file.text();
       const importedData = JSON.parse(text);
-      // TODO: Validate and import vocabulary
-      console.log('Importing vocabulary:', importedData);
+      
+      let result;
+      if (Array.isArray(importedData)) {
+        // Direct vocabulary array import
+        result = await StorageManager.importVocabulary(importedData, {
+          allowDuplicates: false,
+          skipInvalid: true,
+        });
+        alert(`Successfully imported ${result.imported} vocabulary items. Skipped ${result.skipped} duplicates/invalid items.`);
+      } else {
+        // Full data import
+        result = await StorageManager.importFullData(text, {
+          replaceExisting: false,
+          skipInvalid: true,
+        });
+        alert(result.summary);
+      }
+      
+      // Reload data to reflect changes
+      await loadData();
     } catch (error) {
       console.error('Failed to import vocabulary:', error);
-      alert('Failed to import vocabulary. Please check the file format.');
+      alert(`Failed to import vocabulary: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+    
+    // Reset the input
+    event.target.value = '';
+  };
+
+  const handleExportVocabulary = async () => {
+    try {
+      const exportData = await StorageManager.exportData();
+      const dataBlob = new Blob([exportData], { type: 'application/json' });
+      const url = URL.createObjectURL(dataBlob);
+      
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `hindi_vocabulary_backup_${new Date().toISOString().split('T')[0]}.json`;
+      link.click();
+      
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Failed to export vocabulary:', error);
+      alert(`Failed to export vocabulary: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
 
-  const handleExportVocabulary = () => {
-    const dataStr = JSON.stringify(vocabulary, null, 2);
-    const dataBlob = new Blob([dataStr], { type: 'application/json' });
-    const url = URL.createObjectURL(dataBlob);
-    
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'hindi_vocabulary.json';
-    link.click();
-    
-    URL.revokeObjectURL(url);
+  const handleAddVocabulary = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newWord.targetLanguageWord.trim() || !newWord.englishTranslation.trim()) {
+      alert('Please fill in both Hindi word and English translation.');
+      return;
+    }
+
+    try {
+      const vocabularyItem = {
+        targetLanguageWord: newWord.targetLanguageWord.trim(),
+        englishTranslation: newWord.englishTranslation.trim(),
+        tags: newWord.tags.split(',').map(tag => tag.trim()).filter(tag => tag),
+        pronunciationAudioUrl: '',
+      };
+
+      await StorageManager.addVocabularyItem(vocabularyItem);
+      
+      // Reset form and hide it
+      setNewWord({ targetLanguageWord: '', englishTranslation: '', tags: '' });
+      setShowAddForm(false);
+      
+      // Reload data
+      await loadData();
+      
+      alert('Vocabulary item added successfully!');
+    } catch (error) {
+      console.error('Failed to add vocabulary item:', error);
+      alert(`Failed to add vocabulary item: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
+
+  const handleDeleteVocabulary = async (itemId: string, word: string) => {
+    if (!confirm(`Are you sure you want to delete "${word}"?`)) {
+      return;
+    }
+
+    try {
+      await StorageManager.deleteVocabularyItem(itemId);
+      await loadData();
+      alert('Vocabulary item deleted successfully!');
+    } catch (error) {
+      console.error('Failed to delete vocabulary item:', error);
+      alert(`Failed to delete vocabulary item: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
+
+  const handleConfigChange = async (updates: Partial<UserConfig>) => {
+    if (!config) return;
+
+    try {
+      const updatedConfig = { ...config, ...updates };
+      await StorageManager.setUserConfig(updatedConfig);
+      setConfig(updatedConfig);
+      
+      // If review settings changed, reschedule alarms
+      if ('dailyReviewTime' in updates || 'reviewRemindersEnabled' in updates) {
+        // Send message to background script to reschedule
+        try {
+          await chrome.runtime.sendMessage({
+            type: 'RESCHEDULE_REVIEW_ALARM'
+          });
+          console.log('Review alarm rescheduled');
+        } catch (error) {
+          console.warn('Could not reschedule alarm:', error);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to update config:', error);
+      alert('Failed to save settings. Please try again.');
+    }
   };
 
   if (loading) {
@@ -216,13 +290,36 @@ export const OptionsApp: React.FC = () => {
             </div>
 
             <div className="setting-group">
-              <h3>🔔 Notifications</h3>
+              <h3>🔔 Notifications & Reviews</h3>
               <div className="setting-item">
                 <label htmlFor="notifications">Enable Notifications:</label>
                 <input
                   type="checkbox"
                   id="notifications"
                   checked={config.notificationsEnabled}
+                  onChange={(e) => handleConfigChange({ notificationsEnabled: e.target.checked })}
+                />
+              </div>
+              <div className="setting-item">
+                <label htmlFor="review-reminders">Daily Review Reminders:</label>
+                <input
+                  type="checkbox"
+                  id="review-reminders"
+                  checked={config.reviewRemindersEnabled}
+                  onChange={(e) => handleConfigChange({ reviewRemindersEnabled: e.target.checked })}
+                />
+              </div>
+              <div className="setting-item">
+                <label htmlFor="review-time">Daily Review Time:</label>
+                <input
+                  type="time"
+                  id="review-time"
+                  value={`${config.dailyReviewTime.toString().padStart(2, '0')}:00`}
+                  onChange={(e) => {
+                    const hour = parseInt(e.target.value.split(':')[0], 10);
+                    handleConfigChange({ dailyReviewTime: hour });
+                  }}
+                  disabled={!config.reviewRemindersEnabled}
                 />
               </div>
               <div className="setting-item">
@@ -231,6 +328,22 @@ export const OptionsApp: React.FC = () => {
                   type="time"
                   id="quiet-start"
                   value={`${config.quietHoursStart.toString().padStart(2, '0')}:00`}
+                  onChange={(e) => {
+                    const hour = parseInt(e.target.value.split(':')[0], 10);
+                    handleConfigChange({ quietHoursStart: hour });
+                  }}
+                />
+              </div>
+              <div className="setting-item">
+                <label htmlFor="quiet-end">Quiet Hours End:</label>
+                <input
+                  type="time"
+                  id="quiet-end"
+                  value={`${config.quietHoursEnd.toString().padStart(2, '0')}:00`}
+                  onChange={(e) => {
+                    const hour = parseInt(e.target.value.split(':')[0], 10);
+                    handleConfigChange({ quietHoursEnd: hour });
+                  }}
                 />
               </div>
             </div>

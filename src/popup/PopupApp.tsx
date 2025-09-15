@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { VocabularyItem, LearningStats } from '@/types';
+import { StorageManager } from '@/utils/storage';
+import { SM2Engine } from '@/utils/srs-engine';
 
 export const PopupApp: React.FC = () => {
   const [currentItem, setCurrentItem] = useState<VocabularyItem | null>(null);
@@ -14,37 +16,19 @@ export const PopupApp: React.FC = () => {
   const loadData = async () => {
     try {
       setLoading(true);
-      // TODO: Load current review item and stats from storage
-      // This will be implemented when we add the background script and storage utilities
       
-      // Mock data for now
-      const mockItem: VocabularyItem = {
-        id: '1',
-        targetLanguageWord: 'नमस्ते',
-        englishTranslation: 'Hello',
-        srsData: {
-          nextReviewDate: Date.now(),
-          interval: 1,
-          repetitions: 0,
-          easeFactor: 2.5,
-          lastReviewed: 0,
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-        },
-      };
-
-      const mockStats: LearningStats = {
-        totalItems: 10,
-        dueToday: 3,
-        newToday: 2,
-        reviewedToday: 1,
-        accuracyRate: 0.85,
-        streak: 5,
-        totalReviews: 25,
-      };
-
-      setCurrentItem(mockItem);
-      setStats(mockStats);
+      // Initialize storage if needed
+      await StorageManager.initialize();
+      
+      // Load due vocabulary items
+      const dueItems = await StorageManager.getDueVocabulary();
+      const currentItem = dueItems.length > 0 ? dueItems[0] : null;
+      
+      // Load learning statistics
+      const learningStats = await StorageManager.getLearningStats();
+      
+      setCurrentItem(currentItem);
+      setStats(learningStats);
     } catch (error) {
       console.error('Failed to load data:', error);
     } finally {
@@ -60,8 +44,18 @@ export const PopupApp: React.FC = () => {
     if (!currentItem) return;
 
     try {
-      // TODO: Record review response and update SRS data
-      console.log('Quality response:', quality);
+      // Process the review with SM-2 algorithm and update storage
+      const startTime = Date.now() - (showAnswer ? 10000 : 5000); // Estimate review time
+      const responseTime = Date.now() - startTime;
+      
+      await StorageManager.processVocabularyReview(
+        currentItem.id,
+        quality,
+        responseTime,
+        startTime
+      );
+      
+      console.log('Review processed successfully for item:', currentItem.id);
       
       // Reset for next item
       setShowAnswer(false);

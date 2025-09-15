@@ -40,6 +40,8 @@ const DEFAULT_CONFIG: UserConfig = {
   quietHoursEnd: 8,    // 8 AM
   targetLanguage: 'hi-IN',
   newWordRepetitions: 3,
+  dailyReviewTime: 9,  // 9 AM
+  reviewRemindersEnabled: true,
 };
 
 /**
