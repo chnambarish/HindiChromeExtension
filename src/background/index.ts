@@ -4,20 +4,29 @@
  */
 
 import { VocabularyItem, UserConfig, LearningStats, STORAGE_KEYS } from '@/types';
+import { StorageManager, StorageEventManager } from '@/utils/storage';
+import { SM2Engine } from '@/utils/srs-engine';
 
 // Extension installation and initialization
-chrome.runtime.onInstalled.addListener(async () => {
-  console.log('Hindi Language Learner extension installed/updated');
+chrome.runtime.onInstalled.addListener(async (details) => {
+  console.log('Hindi Language Learner extension installed/updated:', details.reason);
   
   try {
-    // Initialize default configuration
-    await initializeDefaultConfig();
+    // Initialize storage using StorageManager
+    await StorageManager.initialize();
+    console.log('Storage initialized successfully');
+    
+    // Initialize storage event manager for cross-tab sync
+    StorageEventManager.initialize();
     
     // Set up daily review alarm
     await setupDailyReviewAlarm();
     
-    // Load initial vocabulary data if none exists
-    await initializeVocabulary();
+    // Create initial backup for new installations
+    if (details.reason === 'install') {
+      await StorageManager.createBackup();
+      console.log('Initial backup created');
+    }
     
     console.log('Extension initialization complete');
   } catch (error) {
@@ -25,134 +34,36 @@ chrome.runtime.onInstalled.addListener(async () => {
   }
 });
 
-/**
- * Initialize default user configuration
- */
-async function initializeDefaultConfig(): Promise<void> {
-  const result = await chrome.storage.local.get([STORAGE_KEYS.USER_CONFIG]);
-  
-  if (!result[STORAGE_KEYS.USER_CONFIG]) {
-    const defaultConfig: UserConfig = {
-      ttsVoice: 'Google Hindi',
-      speechRate: 0.8,
-      speechPitch: 1.0,
-      notificationsEnabled: true,
-      quietHoursStart: 22,
-      quietHoursEnd: 8,
-      targetLanguage: 'hi-IN',
-      newWordRepetitions: 3,
-    };
-    
-    await chrome.storage.local.set({
-      [STORAGE_KEYS.USER_CONFIG]: defaultConfig,
-    });
-    
-    console.log('Default configuration initialized');
-  }
-}
 
 /**
  * Set up daily alarm for review notifications
  */
 async function setupDailyReviewAlarm(): Promise<void> {
-  // Clear existing alarm
-  await chrome.alarms.clear('dailyReviewCheck');
-  
-  // Create new alarm that fires every day at 9 AM
-  const now = new Date();
-  const scheduledTime = new Date();
-  scheduledTime.setHours(9, 0, 0, 0);
-  
-  // If 9 AM has passed today, schedule for tomorrow
-  if (scheduledTime <= now) {
-    scheduledTime.setDate(scheduledTime.getDate() + 1);
+  try {
+    // Clear existing alarm
+    await chrome.alarms.clear('dailyReviewCheck');
+    
+    // Create new alarm that fires every day at 9 AM
+    const now = new Date();
+    const scheduledTime = new Date();
+    scheduledTime.setHours(9, 0, 0, 0);
+    
+    // If 9 AM has passed today, schedule for tomorrow
+    if (scheduledTime <= now) {
+      scheduledTime.setDate(scheduledTime.getDate() + 1);
+    }
+    
+    await chrome.alarms.create('dailyReviewCheck', {
+      when: scheduledTime.getTime(),
+      periodInMinutes: 24 * 60, // Repeat every 24 hours
+    });
+    
+    console.log('Daily review alarm scheduled for:', scheduledTime.toLocaleString());
+  } catch (error) {
+    console.error('Error setting up daily alarm:', error);
   }
-  
-  await chrome.alarms.create('dailyReviewCheck', {
-    when: scheduledTime.getTime(),
-    periodInMinutes: 24 * 60, // Repeat every 24 hours
-  });
-  
-  console.log('Daily review alarm scheduled for:', scheduledTime.toLocaleString());
 }
 
-/**
- * Initialize vocabulary with sample data if none exists
- */
-async function initializeVocabulary(): Promise<void> {
-  const result = await chrome.storage.local.get([STORAGE_KEYS.VOCABULARY_DATA]);
-  
-  if (!result[STORAGE_KEYS.VOCABULARY_DATA] || result[STORAGE_KEYS.VOCABULARY_DATA].length === 0) {
-    const sampleVocabulary: VocabularyItem[] = [
-      {
-        id: '1',
-        targetLanguageWord: 'नमस्ते',
-        englishTranslation: 'Hello/Goodbye',
-        tags: ['greetings', 'basic'],
-        srsData: {
-          nextReviewDate: Date.now(),
-          interval: 1,
-          repetitions: 0,
-          easeFactor: 2.5,
-          lastReviewed: 0,
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-        },
-      },
-      {
-        id: '2',
-        targetLanguageWord: 'धन्यवाद',
-        englishTranslation: 'Thank you',
-        tags: ['gratitude', 'basic'],
-        srsData: {
-          nextReviewDate: Date.now(),
-          interval: 1,
-          repetitions: 0,
-          easeFactor: 2.5,
-          lastReviewed: 0,
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-        },
-      },
-      {
-        id: '3',
-        targetLanguageWord: 'कृपया',
-        englishTranslation: 'Please',
-        tags: ['politeness', 'basic'],
-        srsData: {
-          nextReviewDate: Date.now(),
-          interval: 1,
-          repetitions: 0,
-          easeFactor: 2.5,
-          lastReviewed: 0,
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-        },
-      },
-    ];
-    
-    await chrome.storage.local.set({
-      [STORAGE_KEYS.VOCABULARY_DATA]: sampleVocabulary,
-    });
-    
-    // Initialize learning stats
-    const initialStats: LearningStats = {
-      totalItems: sampleVocabulary.length,
-      dueToday: sampleVocabulary.length,
-      newToday: sampleVocabulary.length,
-      reviewedToday: 0,
-      accuracyRate: 0,
-      streak: 0,
-      totalReviews: 0,
-    };
-    
-    await chrome.storage.local.set({
-      [STORAGE_KEYS.LEARNING_STATS]: initialStats,
-    });
-    
-    console.log('Sample vocabulary initialized');
-  }
-}
 
 /**
  * Handle daily review alarm
@@ -169,15 +80,10 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
  */
 async function checkAndNotifyDueReviews(): Promise<void> {
   try {
-    const result = await chrome.storage.local.get([
-      STORAGE_KEYS.VOCABULARY_DATA,
-      STORAGE_KEYS.USER_CONFIG,
-    ]);
+    // Get user configuration
+    const config = await StorageManager.getUserConfig();
     
-    const vocabulary: VocabularyItem[] = result[STORAGE_KEYS.VOCABULARY_DATA] || [];
-    const config: UserConfig = result[STORAGE_KEYS.USER_CONFIG];
-    
-    if (!config?.notificationsEnabled) {
+    if (!config.notificationsEnabled) {
       console.log('Notifications are disabled');
       return;
     }
@@ -186,25 +92,21 @@ async function checkAndNotifyDueReviews(): Promise<void> {
     const now = new Date();
     const currentHour = now.getHours();
     
-    if (config.quietHoursStart <= config.quietHoursEnd) {
-      // Normal case: quiet hours don't cross midnight
-      if (currentHour >= config.quietHoursStart && currentHour < config.quietHoursEnd) {
-        console.log('In quiet hours, skipping notification');
-        return;
-      }
-    } else {
-      // Special case: quiet hours cross midnight (e.g., 22:00 to 8:00)
-      if (currentHour >= config.quietHoursStart || currentHour < config.quietHoursEnd) {
-        console.log('In quiet hours, skipping notification');
-        return;
-      }
+    if (isQuietHours(currentHour, config.quietHoursStart, config.quietHoursEnd)) {
+      console.log('Currently in quiet hours, skipping notification');
+      return;
     }
     
-    // Count due items
-    const dueItems = vocabulary.filter(item => item.srsData.nextReviewDate <= Date.now());
+    // Get due items using StorageManager and SRS engine
+    const dueItems = await StorageManager.getDueVocabulary();
+    const newItems = await StorageManager.getNewVocabulary();
     
-    if (dueItems.length > 0) {
-      await sendReviewNotification(dueItems.length);
+    // Limit new items to avoid overwhelming the user
+    const todayNewItems = Math.min(newItems.length, 5);
+    const totalDueItems = dueItems.length + todayNewItems;
+    
+    if (totalDueItems > 0) {
+      await sendReviewNotification(totalDueItems, dueItems.length, todayNewItems);
     } else {
       console.log('No reviews due today');
     }
@@ -216,20 +118,34 @@ async function checkAndNotifyDueReviews(): Promise<void> {
 /**
  * Send notification about due reviews
  */
-async function sendReviewNotification(dueCount: number): Promise<void> {
+async function sendReviewNotification(totalCount: number, dueCount: number, newCount: number): Promise<void> {
+  let message: string;
+  
+  if (newCount > 0 && dueCount > 0) {
+    message = `${dueCount} reviews + ${newCount} new words ready! Keep up your learning streak! 🎆`;
+  } else if (newCount > 0) {
+    message = `${newCount} new word${newCount > 1 ? 's' : ''} ready to learn! 🌱`;
+  } else {
+    message = `${dueCount} word${dueCount > 1 ? 's' : ''} ready for review! 💪`;
+  }
+  
   const notificationOptions = {
     type: 'basic' as const,
     iconUrl: 'assets/icon-128.png',
     title: 'Hindi Learning Time! 📚',
-    message: `You have ${dueCount} word${dueCount > 1 ? 's' : ''} to review. Keep up your learning streak!`,
+    message,
     buttons: [
       { title: 'Start Review' },
       { title: 'Later' },
     ],
   };
   
-  const notificationId = await chrome.notifications.create('reviewReminder', notificationOptions);
-  console.log('Review notification sent:', notificationId);
+  try {
+    const notificationId = await chrome.notifications.create('reviewReminder', notificationOptions);
+    console.log(`Review notification sent: ${dueCount} due, ${newCount} new items`);
+  } catch (error) {
+    console.error('Error sending notification:', error);
+  }
 }
 
 /**
@@ -237,9 +153,26 @@ async function sendReviewNotification(dueCount: number): Promise<void> {
  */
 chrome.notifications.onClicked.addListener(async (notificationId) => {
   if (notificationId === 'reviewReminder') {
-    // Open the extension popup (this will show the review interface)
-    await chrome.action.openPopup();
-    await chrome.notifications.clear(notificationId);
+    try {
+      // Clear the notification
+      await chrome.notifications.clear(notificationId);
+      
+      // Try to open popup, fallback to creating a popup window
+      try {
+        await chrome.action.openPopup();
+      } catch (popupError) {
+        // If popup fails, open in a new popup window
+        chrome.windows.create({
+          url: chrome.runtime.getURL('popup/popup.html'),
+          type: 'popup',
+          width: 400,
+          height: 600,
+          focused: true,
+        });
+      }
+    } catch (error) {
+      console.error('Error handling notification click:', error);
+    }
   }
 });
 
@@ -248,12 +181,55 @@ chrome.notifications.onClicked.addListener(async (notificationId) => {
  */
 chrome.notifications.onButtonClicked.addListener(async (notificationId, buttonIndex) => {
   if (notificationId === 'reviewReminder') {
-    if (buttonIndex === 0) {
-      // "Start Review" button
-      await chrome.action.openPopup();
+    try {
+      if (buttonIndex === 0) {
+        // "Start Review" button
+        try {
+          await chrome.action.openPopup();
+        } catch (popupError) {
+          // Fallback to popup window
+          chrome.windows.create({
+            url: chrome.runtime.getURL('popup/popup.html'),
+            type: 'popup',
+            width: 400,
+            height: 600,
+            focused: true,
+          });
+        }
+      } else if (buttonIndex === 1) {
+        // "Later" button - set a reminder for 2 hours
+        chrome.alarms.create('laterReminder', {
+          when: Date.now() + 2 * 60 * 60 * 1000, // 2 hours from now
+        });
+        console.log('Later reminder set for 2 hours');
+      }
+      
+      // Clear the notification
+      await chrome.notifications.clear(notificationId);
+    } catch (error) {
+    console.log('Error handling notification button click:', error);
     }
-    // For "Later" button (index 1), just clear the notification
-    await chrome.notifications.clear(notificationId);
+  }
+});
+
+/**
+ * Check if current time is within quiet hours
+ */
+function isQuietHours(currentHour: number, startHour: number, endHour: number): boolean {
+  if (startHour <= endHour) {
+    // Quiet hours within the same day (e.g., 14:00 - 16:00)
+    return currentHour >= startHour && currentHour < endHour;
+  } else {
+    // Quiet hours span midnight (e.g., 22:00 - 08:00)
+    return currentHour >= startHour || currentHour < endHour;
+  }
+}
+
+// Handle later reminder alarm
+chrome.alarms.onAlarm.addListener(async (alarm) => {
+  if (alarm.name === 'laterReminder') {
+    console.log('Later reminder triggered');
+    await checkAndNotifyDueReviews();
   }
 });
 
