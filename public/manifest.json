@@ -7,9 +7,9 @@
     "storage"
   ],
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "src/background/index.js"
   },
-  "options_page": "options.html",
+  "options_page": "src/options/index.html",
   "action": {
     "default_title": "Spaced Repetition Language Learner"
   }
