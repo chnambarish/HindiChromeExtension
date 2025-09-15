@@ -8,6 +8,12 @@
 
 import { VocabularyItem, UserConfig, LearningStats, ReviewSession, SRSData } from '@/types';
 import { SM2Engine } from './srs-engine';
+import { 
+  SchemaValidator, 
+  ExportValidator, 
+  ImportValidator, 
+  ValidationResult 
+} from './validation-schemas';
 
 /**
  * Storage keys used in Chrome storage
@@ -377,7 +383,7 @@ export class StorageManager {
   // =============================================================================
 
   /**
-   * Export all extension data
+   * Export all extension data with validation
    */
   static async exportData(): Promise<string> {
     const [vocabulary, config, reviewHistory, stats] = await Promise.all([
@@ -396,77 +402,245 @@ export class StorageManager {
       learningStats: stats,
     };
 
+    // Validate export data before serializing
+    const validation = ExportValidator.validateBeforeExport(exportData);
+    if (!validation.isValid) {
+      throw new Error(`Export validation failed: ${validation.errors.join(', ')}`);
+    }
+
+    // Log warnings if any
+    if (validation.warnings.length > 0) {
+      console.warn('Export warnings:', validation.warnings);
+    }
+
     return JSON.stringify(exportData, null, 2);
   }
 
   /**
-   * Import vocabulary data (validates and merges)
+   * Import vocabulary data with comprehensive validation
    */
-  static async importVocabulary(vocabularyData: VocabularyItem[]): Promise<void> {
-    // Validate the data structure
-    if (!Array.isArray(vocabularyData)) {
-      throw new Error('Invalid vocabulary data: must be an array');
+  static async importVocabulary(
+    vocabularyData: VocabularyItem[], 
+    options: { allowDuplicates?: boolean; skipInvalid?: boolean } = {}
+  ): Promise<{ imported: number; skipped: number; warnings: string[] }> {
+    // Validate and sanitize the vocabulary array
+    const validation = SchemaValidator.validateVocabularyArray(vocabularyData);
+    
+    if (!validation.isValid) {
+      if (options.skipInvalid && validation.sanitizedData) {
+        console.warn('Import validation errors (skipping invalid items):', validation.errors);
+      } else {
+        throw new Error(`Vocabulary validation failed: ${validation.errors.join('; ')}`);
+      }
     }
 
-    for (const item of vocabularyData) {
-      if (!this.isValidVocabularyItem(item)) {
-        throw new Error(`Invalid vocabulary item: ${JSON.stringify(item)}`);
-      }
+    const itemsToImport = validation.sanitizedData || [];
+    if (itemsToImport.length === 0) {
+      return { imported: 0, skipped: vocabularyData.length, warnings: validation.warnings };
     }
 
     // Get existing vocabulary
     const existingVocabulary = await this.getVocabulary();
     const existingIds = new Set(existingVocabulary.map(item => item.id));
+    
+    let importedCount = 0;
+    let skippedCount = 0;
 
     // Process imported items
-    const importedItems: VocabularyItem[] = vocabularyData.map(item => {
-      // Generate new ID if it conflicts or doesn't exist
-      const needsNewId = !item.id || existingIds.has(item.id);
-      
-      return {
-        ...item,
-        id: needsNewId ? this.generateId() : item.id,
-        srsData: item.srsData || SM2Engine.createInitialSRSData(),
-      };
-    });
+    const processedItems: VocabularyItem[] = [];
+    
+    for (const item of itemsToImport) {
+      try {
+        // Generate new ID if it conflicts or doesn't exist
+        const needsNewId = !item.id || existingIds.has(item.id);
+        
+        // Skip duplicates if not allowed
+        if (item.id && existingIds.has(item.id) && !options.allowDuplicates) {
+          skippedCount++;
+          continue;
+        }
+        
+        const processedItem: VocabularyItem = {
+          ...item,
+          id: needsNewId ? this.generateId() : item.id,
+          srsData: item.srsData || SM2Engine.createInitialSRSData(),
+        };
+        
+        processedItems.push(processedItem);
+        existingIds.add(processedItem.id);
+        importedCount++;
+      } catch (error) {
+        if (options.skipInvalid) {
+          skippedCount++;
+          console.warn('Skipping invalid item:', item, error);
+        } else {
+          throw error;
+        }
+      }
+    }
 
     // Merge with existing vocabulary
-    const mergedVocabulary = [...existingVocabulary, ...importedItems];
-    await this.setVocabulary(mergedVocabulary);
+    if (processedItems.length > 0) {
+      const mergedVocabulary = [...existingVocabulary, ...processedItems];
+      await this.setVocabulary(mergedVocabulary);
+    }
+
+    return {
+      imported: importedCount,
+      skipped: skippedCount,
+      warnings: validation.warnings,
+    };
   }
 
   /**
-   * Import full extension data (replaces existing)
+   * Import full extension data with comprehensive validation
    */
-  static async importFullData(jsonData: string): Promise<void> {
-    let data;
+  static async importFullData(
+    jsonData: string,
+    options: {
+      replaceExisting?: boolean;
+      skipInvalid?: boolean;
+      validateOnly?: boolean;
+    } = {}
+  ): Promise<{
+    success: boolean;
+    summary: string;
+    imported: {
+      vocabulary: number;
+      reviewHistory: number;
+      configImported: boolean;
+    };
+    skipped: {
+      vocabulary: number;
+      reviewHistory: number;
+    };
+    warnings: string[];
+    errors: string[];
+  }> {
+    // Pre-validate and parse JSON
+    const preValidation = ImportValidator.preValidateImport(jsonData);
+    if (!preValidation.isValid || !preValidation.parsedData) {
+      return {
+        success: false,
+        summary: `Import failed: ${preValidation.errors.join('; ')}`,
+        imported: { vocabulary: 0, reviewHistory: 0, configImported: false },
+        skipped: { vocabulary: 0, reviewHistory: 0 },
+        warnings: preValidation.warnings,
+        errors: preValidation.errors,
+      };
+    }
+
+    const data = preValidation.parsedData;
+    
+    // If validation only, return early
+    if (options.validateOnly) {
+      const summary = ImportValidator.generateImportSummary(data);
+      return {
+        success: preValidation.isValid,
+        summary,
+        imported: { vocabulary: 0, reviewHistory: 0, configImported: false },
+        skipped: { vocabulary: 0, reviewHistory: 0 },
+        warnings: preValidation.warnings,
+        errors: preValidation.errors,
+      };
+    }
+
+    const result = {
+      success: true,
+      summary: '',
+      imported: { vocabulary: 0, reviewHistory: 0, configImported: false },
+      skipped: { vocabulary: 0, reviewHistory: 0 },
+      warnings: [...preValidation.warnings],
+      errors: [...preValidation.errors],
+    };
+
     try {
-      data = JSON.parse(jsonData);
+      // Import vocabulary
+      if (data.vocabulary && Array.isArray(data.vocabulary) && data.vocabulary.length > 0) {
+        if (options.replaceExisting) {
+          // Replace existing vocabulary
+          const vocabValidation = SchemaValidator.validateVocabularyArray(data.vocabulary);
+          if (vocabValidation.isValid && vocabValidation.sanitizedData) {
+            await this.setVocabulary(vocabValidation.sanitizedData);
+            result.imported.vocabulary = vocabValidation.sanitizedData.length;
+          } else {
+            result.errors.push(...vocabValidation.errors);
+            result.success = false;
+          }
+        } else {
+          // Merge with existing vocabulary
+          const importResult = await this.importVocabulary(data.vocabulary, {
+            allowDuplicates: false,
+            skipInvalid: options.skipInvalid,
+          });
+          result.imported.vocabulary = importResult.imported;
+          result.skipped.vocabulary = importResult.skipped;
+          result.warnings.push(...importResult.warnings);
+        }
+      }
+
+      // Import user configuration
+      if (data.userConfig) {
+        const configValidation = SchemaValidator.validateUserConfig(data.userConfig);
+        if (configValidation.isValid) {
+          const mergedConfig = options.replaceExisting 
+            ? data.userConfig 
+            : { ...await this.getUserConfig(), ...data.userConfig };
+          await this.setUserConfig(mergedConfig);
+          result.imported.configImported = true;
+        } else {
+          result.warnings.push(`User config validation failed: ${configValidation.errors.join(', ')}`);
+        }
+        result.warnings.push(...configValidation.warnings);
+      }
+
+      // Import review history
+      if (data.reviewHistory && Array.isArray(data.reviewHistory)) {
+        if (options.replaceExisting) {
+          // Validate and replace review history
+          const validSessions = [];
+          let skippedSessions = 0;
+          
+          for (const session of data.reviewHistory) {
+            const sessionValidation = SchemaValidator.validateReviewSession(session);
+            if (sessionValidation.isValid) {
+              validSessions.push(session);
+            } else {
+              skippedSessions++;
+              if (!options.skipInvalid) {
+                result.errors.push(`Invalid review session: ${sessionValidation.errors.join(', ')}`);
+                result.success = false;
+                break;
+              }
+            }
+          }
+          
+          if (result.success) {
+            await this.setReviewHistory(validSessions);
+            result.imported.reviewHistory = validSessions.length;
+            result.skipped.reviewHistory = skippedSessions;
+          }
+        } else {
+          result.warnings.push('Review history import in merge mode not supported - skipping');
+          result.skipped.reviewHistory = data.reviewHistory.length;
+        }
+      }
+
+      // Update learning statistics
+      if (result.success && result.imported.vocabulary > 0) {
+        await this.updateLearningStats();
+      }
+
+      // Generate summary
+      result.summary = `Import completed: ${result.imported.vocabulary} vocabulary items, ${result.imported.reviewHistory} review sessions${result.imported.configImported ? ', user configuration' : ''}. Skipped: ${result.skipped.vocabulary + result.skipped.reviewHistory} items.`;
+      
     } catch (error) {
-      throw new Error('Invalid JSON data');
+      result.success = false;
+      result.errors.push(error instanceof Error ? error.message : 'Unknown import error');
+      result.summary = `Import failed: ${result.errors.join('; ')}`;
     }
 
-    // Validate required fields
-    if (!data.vocabulary || !Array.isArray(data.vocabulary)) {
-      throw new Error('Invalid data: vocabulary array is required');
-    }
-
-    // Import vocabulary
-    if (data.vocabulary.length > 0) {
-      await this.importVocabulary(data.vocabulary);
-    }
-
-    // Import user config if present
-    if (data.userConfig) {
-      await this.setUserConfig({ ...DEFAULT_CONFIG, ...data.userConfig });
-    }
-
-    // Import review history if present and valid
-    if (data.reviewHistory && Array.isArray(data.reviewHistory)) {
-      await this.setReviewHistory(data.reviewHistory);
-    }
-
-    await this.updateLearningStats();
+    return result;
   }
 
   // =============================================================================
@@ -543,35 +717,19 @@ export class StorageManager {
   }
 
   /**
-   * Validate vocabulary item structure
+   * Validate vocabulary item structure (legacy method, now uses SchemaValidator)
    */
   private static isValidVocabularyItem(item: any): item is VocabularyItem {
-    return (
-      typeof item === 'object' &&
-      item !== null &&
-      typeof item.targetLanguageWord === 'string' &&
-      typeof item.englishTranslation === 'string' &&
-      (typeof item.id === 'string' || !item.id) &&
-      (!item.tags || Array.isArray(item.tags)) &&
-      (!item.srsData || this.isValidSRSData(item.srsData))
-    );
+    const validation = SchemaValidator.validateVocabularyItem(item);
+    return validation.isValid;
   }
 
   /**
-   * Validate SRS data structure
+   * Validate SRS data structure (legacy method, now uses SchemaValidator)
    */
   private static isValidSRSData(srsData: any): srsData is SRSData {
-    return (
-      typeof srsData === 'object' &&
-      srsData !== null &&
-      typeof srsData.nextReviewDate === 'number' &&
-      typeof srsData.interval === 'number' &&
-      typeof srsData.repetitions === 'number' &&
-      typeof srsData.easeFactor === 'number' &&
-      typeof srsData.lastReviewed === 'number' &&
-      typeof srsData.createdAt === 'number' &&
-      typeof srsData.updatedAt === 'number'
-    );
+    const validation = SchemaValidator.validateSRSData(srsData);
+    return validation.isValid;
   }
 }
 
