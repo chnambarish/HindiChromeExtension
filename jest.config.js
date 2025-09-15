@@ -1,5 +1,6 @@
-module.exports = {
-  preset: 'ts-jest',
+export default {
+  preset: 'ts-jest/presets/default-esm',
+  extensionsToTreatAsEsm: ['.ts', '.tsx'],
   testEnvironment: 'jsdom',
   setupFilesAfterEnv: ['<rootDir>/src/tests/setup.ts'],
   moduleNameMapping: {
@@ -17,6 +18,7 @@ module.exports = {
   coverageReporters: ['text', 'lcov', 'html'],
   transform: {
     '^.+\\.(ts|tsx)$': ['ts-jest', {
+      useESM: true,
       tsconfig: {
         jsx: 'react-jsx',
       },
