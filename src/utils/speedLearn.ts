@@ -102,33 +102,23 @@ export class SpeedLearnEngine {
       await this.storageManager.getAllVocabulary(); // This should trigger migration
     }
     
-    // Priority order for Speed Learn
-    const newWords = allItems.filter(item => 
+    // Speed Learn focuses ONLY on new learning - no reviews!
+    const newLearningWords = allItems.filter(item => 
       item.srsData.speedLearnStage === SpeedLearnStage.NEW ||
       item.srsData.speedLearnStage === SpeedLearnStage.PASSIVE_LEARNING
     );
-    
-    const reviewWords = allItems.filter(item =>
-      item.srsData.speedLearnStage === SpeedLearnStage.LONG_TERM_REVIEW &&
-      item.srsData.nextReviewDate <= Date.now()
-    );
 
-    console.log('New words available:', newWords.length);
-    console.log('Review words available:', reviewWords.length);
+    console.log('New learning words available:', newLearningWords.length);
+    console.log('Speed Learn is purely for NEW learning - reviews stay in Reviews tab');
 
     // If no words have Speed Learn stages, treat all as new
-    if (newWords.length === 0 && reviewWords.length === 0 && allItems.length > 0) {
+    if (newLearningWords.length === 0 && allItems.length > 0) {
       console.log('No items with Speed Learn stages found, treating all as new');
       return allItems.slice(0, this.config.maxWordsPerSession);
     }
 
-    // Mix new words (priority) with some review words
-    const sessionWords = [
-      ...newWords.slice(0, Math.min(10, this.config.maxWordsPerSession - 5)),
-      ...reviewWords.slice(0, 5)
-    ];
-
-    return sessionWords.slice(0, this.config.maxWordsPerSession);
+    // Return ONLY new learning words - no reviews mixed in
+    return newLearningWords.slice(0, this.config.maxWordsPerSession);
   }
 
   /**
@@ -235,14 +225,17 @@ export class SpeedLearnEngine {
 
     // Update stage based on exposure count (fully automatic progression)
     if (updatedWord.srsData.exposureCount >= this.config.exposuresBeforeMastery) {
-      // Automatically mark as mastered after sufficient exposures
+      // Automatically mark as mastered and EXIT Speed Learn system
       updatedWord.srsData.speedLearnStage = SpeedLearnStage.MASTERED;
       updatedWord.srsData.masteredAt = Date.now();
       
-      // Move to long-term review with SM-2 algorithm
-      updatedWord.srsData.interval = 3; // Start with 3-day interval
-      updatedWord.srsData.nextReviewDate = Date.now() + (3 * 24 * 60 * 60 * 1000);
-      updatedWord.srsData.speedLearnStage = SpeedLearnStage.LONG_TERM_REVIEW;
+      // Move to traditional SRS system (Reviews tab only)
+      // Speed Learn is done with this word - it now goes to Reviews tab
+      updatedWord.srsData.interval = 1; // Start fresh in traditional SRS
+      updatedWord.srsData.nextReviewDate = Date.now() + (24 * 60 * 60 * 1000); // Next day
+      updatedWord.srsData.repetitions = 0; // Reset for traditional SRS progression
+      
+      console.log(`Word "${updatedWord.targetLanguageWord}" mastered via Speed Learn - now in Reviews tab only`);
     } else if (updatedWord.srsData.speedLearnStage === SpeedLearnStage.NEW) {
       updatedWord.srsData.speedLearnStage = SpeedLearnStage.PASSIVE_LEARNING;
     }
@@ -370,13 +363,13 @@ export class SpeedLearnEngine {
   }
 
   /**
-   * Get statistics about current learning progress
+   * Get statistics about current Speed Learn progress (new learning only)
    */
   async getLearningProgress(): Promise<{
     newWords: number;
     learningWords: number;
     masteredWords: number;
-    reviewWords: number;
+    totalInTraditionalReviews: number;
   }> {
     const allItems = await this.storageManager.getAllVocabulary();
     
@@ -384,7 +377,10 @@ export class SpeedLearnEngine {
       newWords: allItems.filter(item => item.srsData.speedLearnStage === SpeedLearnStage.NEW).length,
       learningWords: allItems.filter(item => item.srsData.speedLearnStage === SpeedLearnStage.PASSIVE_LEARNING).length,
       masteredWords: allItems.filter(item => item.srsData.speedLearnStage === SpeedLearnStage.MASTERED).length,
-      reviewWords: allItems.filter(item => item.srsData.speedLearnStage === SpeedLearnStage.LONG_TERM_REVIEW).length
+      totalInTraditionalReviews: allItems.filter(item => 
+        item.srsData.speedLearnStage === SpeedLearnStage.MASTERED && 
+        item.srsData.nextReviewDate <= Date.now()
+      ).length
     };
   }
 

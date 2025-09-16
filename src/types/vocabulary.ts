@@ -91,13 +91,12 @@ export enum ReviewQuality {
 }
 
 /**
- * Speed Learn stages based on linguistic psychology (fully automatic)
+ * Speed Learn stages - purely for new learning (reviews stay in Reviews tab)
  */
 export enum SpeedLearnStage {
-  NEW = 'new',                        // Just added, not yet in Speed Learn
-  PASSIVE_LEARNING = 'passive_learning', // Currently in auto-play cycle
-  MASTERED = 'mastered',                 // Automatically mastered after sufficient exposures
-  LONG_TERM_REVIEW = 'long_term_review'  // In spaced review cycle
+  NEW = 'new',                        // Just added, ready for Speed Learn
+  PASSIVE_LEARNING = 'passive_learning', // Currently in Speed Learn auto-play cycle (1-5 exposures)
+  MASTERED = 'mastered',                 // Speed Learn complete - moves to Reviews tab for SRS
 }
 
 /**

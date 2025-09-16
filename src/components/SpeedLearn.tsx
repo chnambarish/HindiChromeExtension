@@ -28,7 +28,7 @@ export const SpeedLearn: React.FC<SpeedLearnProps> = ({ storageManager }) => {
     newWords: number;
     learningWords: number;
     masteredWords: number;
-    reviewWords: number;
+    totalInTraditionalReviews: number;
   } | null>(null);
 
   useEffect(() => {
@@ -130,8 +130,8 @@ export const SpeedLearn: React.FC<SpeedLearnProps> = ({ storageManager }) => {
       {/* Learning Progress */}
       {learningProgress && (
         <div className="bg-gradient-to-r from-green-50 to-blue-50 p-4 rounded-lg mb-4 border border-green-200">
-          <h4 className="font-medium text-gray-800 mb-3">🌱 Learning Progress</h4>
-          <div className="grid grid-cols-2 gap-3 text-sm">
+          <h4 className="font-medium text-gray-800 mb-3">🌱 Speed Learn Progress (New Learning Only)</h4>
+          <div className="grid grid-cols-2 gap-3 text-sm mb-3">
             <div className="bg-blue-100 p-2 rounded text-center">
               <div className="font-bold text-blue-700">{learningProgress.newWords}</div>
               <div className="text-blue-600">New Words</div>
@@ -142,12 +142,15 @@ export const SpeedLearn: React.FC<SpeedLearnProps> = ({ storageManager }) => {
             </div>
             <div className="bg-green-100 p-2 rounded text-center">
               <div className="font-bold text-green-700">{learningProgress.masteredWords}</div>
-              <div className="text-green-600">Mastered</div>
+              <div className="text-green-600">Completed</div>
             </div>
             <div className="bg-purple-100 p-2 rounded text-center">
-              <div className="font-bold text-purple-700">{learningProgress.reviewWords}</div>
-              <div className="text-purple-600">Reviews</div>
+              <div className="font-bold text-purple-700">{learningProgress.totalInTraditionalReviews}</div>
+              <div className="text-purple-600">In Reviews Tab</div>
             </div>
+          </div>
+          <div className="text-xs text-gray-500 text-center">
+            📝 Speed Learn = New learning only • Reviews = Traditional SRS in Reviews tab
           </div>
         </div>
       )}
