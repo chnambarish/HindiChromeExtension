@@ -45,6 +45,19 @@ export interface SRSData {
   
   /** Timestamp when the item was last updated */
   updatedAt: number;
+  
+  // Speed Learn extensions
+  /** Current stage in the Speed Learn process */
+  speedLearnStage: SpeedLearnStage;
+  
+  /** Number of times word was heard in Speed Learn mode */
+  exposureCount: number;
+  
+  /** Timestamp when item was mastered (passed quiz) */
+  masteredAt?: number;
+  
+  /** Timestamp of last Speed Learn session */
+  lastSpeedLearnSession?: number;
 }
 
 /**
@@ -75,6 +88,69 @@ export enum ReviewQuality {
   Hard = 2,  // Correct response recalled with serious difficulty
   Good = 3,  // Correct response after a hesitation
   Easy = 4,  // Perfect response
+}
+
+/**
+ * Speed Learn stages based on linguistic psychology
+ */
+export enum SpeedLearnStage {
+  NEW = 'new',                        // Just added, not yet in Speed Learn
+  PASSIVE_LEARNING = 'passive_learning', // Currently in auto-play cycle
+  READY_FOR_QUIZ = 'ready_for_quiz',     // 5+ exposures, needs manual quiz
+  MASTERED = 'mastered',                 // Passed quiz, graduated
+  LONG_TERM_REVIEW = 'long_term_review'  // In spaced review cycle
+}
+
+/**
+ * Speed Learn session configuration
+ */
+export interface SpeedLearnConfig {
+  /** Number of repetitions per session (2-5) */
+  repetitionsPerSession: number;
+  
+  /** Pause between Hindi and English (milliseconds) */
+  wordPause: number;
+  
+  /** Pause between different words (milliseconds) */
+  sentencePause: number;
+  
+  /** Maximum words per session to prevent cognitive overload */
+  maxWordsPerSession: number;
+  
+  /** Enable background music (alpha waves) */
+  enableBackgroundMusic: boolean;
+  
+  /** TTS speed multiplier (0.5 - 2.0) */
+  speechSpeed: number;
+  
+  /** Auto-advance to quiz after N exposures */
+  exposuresBeforeQuiz: number;
+}
+
+/**
+ * Speed Learn session data
+ */
+export interface SpeedLearnSession {
+  /** Session ID */
+  id: string;
+  
+  /** Session start timestamp */
+  startTime: number;
+  
+  /** Session end timestamp */
+  endTime?: number;
+  
+  /** Items played in this session */
+  itemsPlayed: string[];
+  
+  /** Number of repetitions completed */
+  repetitionsCompleted: number;
+  
+  /** Session was completed vs manually stopped */
+  completed: boolean;
+  
+  /** Total duration in milliseconds */
+  duration?: number;
 }
 
 /**
@@ -136,4 +212,7 @@ export interface UserConfig {
   
   /** Enable daily review reminders */
   reviewRemindersEnabled: boolean;
+  
+  /** Speed Learn configuration */
+  speedLearnConfig: SpeedLearnConfig;
 }

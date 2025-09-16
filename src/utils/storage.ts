@@ -6,7 +6,7 @@
  * and review sessions using Chrome's storage API.
  */
 
-import { VocabularyItem, UserConfig, LearningStats, ReviewSession, SRSData } from '@/types';
+import { VocabularyItem, SRSData, ReviewSession, UserConfig, LearningStats, SpeedLearnStage } from '../types/vocabulary';
 import { SM2Engine } from './srs-engine';
 import { 
   SchemaValidator, 
@@ -42,6 +42,15 @@ const DEFAULT_CONFIG: UserConfig = {
   newWordRepetitions: 3,
   dailyReviewTime: 9,  // 9 AM
   reviewRemindersEnabled: true,
+  speedLearnConfig: {
+    repetitionsPerSession: 3,
+    wordPause: 1500,
+    sentencePause: 3000,
+    maxWordsPerSession: 15,
+    enableBackgroundMusic: false,
+    speechSpeed: 1.0,
+    exposuresBeforeQuiz: 5
+  }
 };
 
 /**
@@ -109,12 +118,17 @@ export class StorageManager {
       const vocabulary = await this.getVocabulary();
       if (!vocabulary || vocabulary.length === 0) {
         await this.setVocabulary(DEFAULT_VOCABULARY);
+      } else {
+        // Migrate existing vocabulary to include Speed Learn fields
+        await this.migrateVocabularyForSpeedLearn(vocabulary);
       }
 
-      // Ensure user config exists
+      // Ensure user config exists and has Speed Learn config
       const config = await this.getUserConfig();
       if (!config) {
         await this.setUserConfig(DEFAULT_CONFIG);
+      } else {
+        await this.migrateUserConfigForSpeedLearn(config);
       }
 
       // Initialize empty review history if it doesn't exist
@@ -144,6 +158,55 @@ export class StorageManager {
       this.updateLearningStats(),
     ]);
     console.log('First-time setup completed');
+  }
+
+  /**
+   * Migrate existing vocabulary items to include Speed Learn fields
+   */
+  private static async migrateVocabularyForSpeedLearn(vocabulary: VocabularyItem[]): Promise<void> {
+    let needsUpdate = false;
+    const migratedVocabulary = vocabulary.map(item => {
+      if (!item.srsData.speedLearnStage || item.srsData.exposureCount === undefined) {
+        needsUpdate = true;
+        return {
+          ...item,
+          srsData: {
+            ...item.srsData,
+            speedLearnStage: SpeedLearnStage.NEW,
+            exposureCount: 0,
+            updatedAt: Date.now()
+          }
+        };
+      }
+      return item;
+    });
+
+    if (needsUpdate) {
+      await this.setVocabulary(migratedVocabulary);
+      console.log('Vocabulary migrated for Speed Learn compatibility');
+    }
+  }
+
+  /**
+   * Migrate user config to include Speed Learn configuration
+   */
+  private static async migrateUserConfigForSpeedLearn(config: UserConfig): Promise<void> {
+    if (!(config as any).speedLearnConfig) {
+      const migratedConfig = {
+        ...config,
+        speedLearnConfig: {
+          repetitionsPerSession: 3,
+          wordPause: 1500,
+          sentencePause: 3000,
+          maxWordsPerSession: 15,
+          enableBackgroundMusic: false,
+          speechSpeed: 1.0,
+          exposuresBeforeQuiz: 5
+        }
+      };
+      await this.setUserConfig(migratedConfig);
+      console.log('User config migrated for Speed Learn compatibility');
+    }
   }
 
   // =============================================================================
@@ -732,6 +795,32 @@ export class StorageManager {
   private static isValidSRSData(srsData: any): srsData is SRSData {
     const validation = SchemaValidator.validateSRSData(srsData);
     return validation.isValid;
+  }
+
+  // =============================================================================
+  // INSTANCE METHODS FOR SPEED LEARN COMPATIBILITY
+  // =============================================================================
+
+  /**
+   * Get all vocabulary (instance method)
+   */
+  async getAllVocabulary(): Promise<VocabularyItem[]> {
+    return StorageManager.getVocabulary();
+  }
+
+  /**
+   * Get single vocabulary item (instance method)
+   */
+  async getVocabulary(id: string): Promise<VocabularyItem | null> {
+    const vocabulary = await StorageManager.getVocabulary();
+    return vocabulary.find(item => item.id === id) || null;
+  }
+
+  /**
+   * Update vocabulary item (instance method)
+   */
+  async updateVocabulary(item: VocabularyItem): Promise<void> {
+    return StorageManager.updateVocabularyItem(item);
   }
 }
 

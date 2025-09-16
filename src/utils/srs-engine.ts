@@ -7,7 +7,7 @@
  * @see https://www.supermemo.com/en/archives1990-2015/english/ol/sm2
  */
 
-import { VocabularyItem, SRSData, ReviewQuality, ReviewSession } from '@/types';
+import { VocabularyItem, SRSData, ReviewSession, ReviewQuality, LearningStats, SpeedLearnStage } from '../types/vocabulary';
 
 /**
  * Core SM-2 algorithm parameters
@@ -135,6 +135,9 @@ export class SM2Engine {
       lastReviewed: 0,
       createdAt: now,
       updatedAt: now,
+      // Speed Learn extensions
+      speedLearnStage: SpeedLearnStage.NEW,
+      exposureCount: 0,
     };
   }
   
