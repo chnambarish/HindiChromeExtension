@@ -33,8 +33,8 @@ export class SpeedLearnEngine {
   private getDefaultConfig(): SpeedLearnConfig {
     return {
       repetitionsPerSession: 3,
-      wordPause: 1500,        // 1.5 seconds between Hindi and English
-      sentencePause: 3000,    // 3 seconds between words
+      wordPause: 800,         // 0.8 seconds between Hindi and English
+      sentencePause: 1200,    // 1.2 seconds between words
       maxWordsPerSession: 15,
       enableBackgroundMusic: false,
       speechSpeed: 1.0,

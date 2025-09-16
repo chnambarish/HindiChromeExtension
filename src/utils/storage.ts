@@ -44,8 +44,8 @@ const DEFAULT_CONFIG: UserConfig = {
   reviewRemindersEnabled: true,
   speedLearnConfig: {
     repetitionsPerSession: 3,
-    wordPause: 1500,
-    sentencePause: 3000,
+    wordPause: 800,
+    sentencePause: 1200,
     maxWordsPerSession: 15,
     enableBackgroundMusic: false,
     speechSpeed: 1.0,
@@ -196,8 +196,8 @@ export class StorageManager {
         ...config,
         speedLearnConfig: {
           repetitionsPerSession: 3,
-          wordPause: 1500,
-          sentencePause: 3000,
+          wordPause: 800,
+          sentencePause: 1200,
           maxWordsPerSession: 15,
           enableBackgroundMusic: false,
           speechSpeed: 1.0,

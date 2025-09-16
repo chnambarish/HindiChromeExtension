@@ -16,8 +16,8 @@ export const SpeedLearn: React.FC<SpeedLearnProps> = ({ storageManager }) => {
   const [progress, setProgress] = useState({ wordIndex: 0, repetition: 0, totalWords: 0 });
   const [config, setConfig] = useState<SpeedLearnConfig>({
     repetitionsPerSession: 3,
-    wordPause: 1500,
-    sentencePause: 3000,
+    wordPause: 800,
+    sentencePause: 1200,
     maxWordsPerSession: 15,
     enableBackgroundMusic: false,
     speechSpeed: 1.0,
@@ -277,6 +277,38 @@ export const SpeedLearn: React.FC<SpeedLearnProps> = ({ storageManager }) => {
                 onChange={(e) => handleConfigChange('maxWordsPerSession', parseInt(e.target.value))}
                 className="w-full"
               />
+            </div>
+            
+            <div>
+              <label className="block text-sm text-gray-600 mb-1">
+                Word pause: {(config.wordPause / 1000).toFixed(1)}s
+              </label>
+              <input
+                type="range"
+                min="500"
+                max="2000"
+                step="100"
+                value={config.wordPause}
+                onChange={(e) => handleConfigChange('wordPause', parseInt(e.target.value))}
+                className="w-full"
+              />
+              <div className="text-xs text-gray-500">Pause between Hindi and English</div>
+            </div>
+            
+            <div>
+              <label className="block text-sm text-gray-600 mb-1">
+                Sentence pause: {(config.sentencePause / 1000).toFixed(1)}s
+              </label>
+              <input
+                type="range"
+                min="800"
+                max="3000"
+                step="100"
+                value={config.sentencePause}
+                onChange={(e) => handleConfigChange('sentencePause', parseInt(e.target.value))}
+                className="w-full"
+              />
+              <div className="text-xs text-gray-500">Pause between different words</div>
             </div>
           </div>
         </div>
