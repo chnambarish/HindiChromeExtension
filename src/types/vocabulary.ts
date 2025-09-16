@@ -91,13 +91,12 @@ export enum ReviewQuality {
 }
 
 /**
- * Speed Learn stages based on linguistic psychology
+ * Speed Learn stages based on linguistic psychology (fully automatic)
  */
 export enum SpeedLearnStage {
   NEW = 'new',                        // Just added, not yet in Speed Learn
   PASSIVE_LEARNING = 'passive_learning', // Currently in auto-play cycle
-  READY_FOR_QUIZ = 'ready_for_quiz',     // 5+ exposures, needs manual quiz
-  MASTERED = 'mastered',                 // Passed quiz, graduated
+  MASTERED = 'mastered',                 // Automatically mastered after sufficient exposures
   LONG_TERM_REVIEW = 'long_term_review'  // In spaced review cycle
 }
 
@@ -123,8 +122,8 @@ export interface SpeedLearnConfig {
   /** TTS speed multiplier (0.5 - 2.0) */
   speechSpeed: number;
   
-  /** Auto-advance to quiz after N exposures */
-  exposuresBeforeQuiz: number;
+  /** Automatically master word after N exposures (no quiz required) */
+  exposuresBeforeMastery: number;
 }
 
 /**

@@ -49,7 +49,7 @@ const DEFAULT_CONFIG: UserConfig = {
     maxWordsPerSession: 15,
     enableBackgroundMusic: false,
     speechSpeed: 1.0,
-    exposuresBeforeQuiz: 5
+    exposuresBeforeMastery: 5
   }
 };
 
@@ -201,7 +201,7 @@ export class StorageManager {
           maxWordsPerSession: 15,
           enableBackgroundMusic: false,
           speechSpeed: 1.0,
-          exposuresBeforeQuiz: 5
+          exposuresBeforeMastery: 5
         }
       };
       await this.setUserConfig(migratedConfig);

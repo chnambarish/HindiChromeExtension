@@ -38,7 +38,7 @@ export class SpeedLearnEngine {
       maxWordsPerSession: 15,
       enableBackgroundMusic: false,
       speechSpeed: 1.0,
-      exposuresBeforeQuiz: 5
+      exposuresBeforeMastery: 5
     };
   }
 
@@ -233,9 +233,16 @@ export class SpeedLearnEngine {
     updatedWord.srsData.exposureCount = (updatedWord.srsData.exposureCount || 0) + 1;
     updatedWord.srsData.lastSpeedLearnSession = Date.now();
 
-    // Update stage based on exposure count
-    if (updatedWord.srsData.exposureCount >= this.config.exposuresBeforeQuiz) {
-      updatedWord.srsData.speedLearnStage = SpeedLearnStage.READY_FOR_QUIZ;
+    // Update stage based on exposure count (fully automatic progression)
+    if (updatedWord.srsData.exposureCount >= this.config.exposuresBeforeMastery) {
+      // Automatically mark as mastered after sufficient exposures
+      updatedWord.srsData.speedLearnStage = SpeedLearnStage.MASTERED;
+      updatedWord.srsData.masteredAt = Date.now();
+      
+      // Move to long-term review with SM-2 algorithm
+      updatedWord.srsData.interval = 3; // Start with 3-day interval
+      updatedWord.srsData.nextReviewDate = Date.now() + (3 * 24 * 60 * 60 * 1000);
+      updatedWord.srsData.speedLearnStage = SpeedLearnStage.LONG_TERM_REVIEW;
     } else if (updatedWord.srsData.speedLearnStage === SpeedLearnStage.NEW) {
       updatedWord.srsData.speedLearnStage = SpeedLearnStage.PASSIVE_LEARNING;
     }
@@ -363,25 +370,22 @@ export class SpeedLearnEngine {
   }
 
   /**
-   * Get words ready for quiz
+   * Get statistics about current learning progress
    */
-  async getWordsReadyForQuiz(): Promise<VocabularyItem[]> {
+  async getLearningProgress(): Promise<{
+    newWords: number;
+    learningWords: number;
+    masteredWords: number;
+    reviewWords: number;
+  }> {
     const allItems = await this.storageManager.getAllVocabulary();
-    return allItems.filter(item => 
-      item.srsData.speedLearnStage === SpeedLearnStage.READY_FOR_QUIZ
-    );
-  }
-
-  /**
-   * Mark word as mastered after successful quiz
-   */
-  async markWordAsMastered(wordId: string): Promise<void> {
-    const word = await this.storageManager.getVocabulary(wordId);
-    if (word) {
-      word.srsData.speedLearnStage = SpeedLearnStage.MASTERED;
-      word.srsData.masteredAt = Date.now();
-      await this.storageManager.updateVocabulary(word);
-    }
+    
+    return {
+      newWords: allItems.filter(item => item.srsData.speedLearnStage === SpeedLearnStage.NEW).length,
+      learningWords: allItems.filter(item => item.srsData.speedLearnStage === SpeedLearnStage.PASSIVE_LEARNING).length,
+      masteredWords: allItems.filter(item => item.srsData.speedLearnStage === SpeedLearnStage.MASTERED).length,
+      reviewWords: allItems.filter(item => item.srsData.speedLearnStage === SpeedLearnStage.LONG_TERM_REVIEW).length
+    };
   }
 
   // Event listener setters

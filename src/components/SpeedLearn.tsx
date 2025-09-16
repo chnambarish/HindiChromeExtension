@@ -21,12 +21,15 @@ export const SpeedLearn: React.FC<SpeedLearnProps> = ({ storageManager }) => {
     maxWordsPerSession: 15,
     enableBackgroundMusic: false,
     speechSpeed: 1.0,
-    exposuresBeforeQuiz: 5
+    exposuresBeforeMastery: 5
   });
 
-  const [wordsReadyForQuiz, setWordsReadyForQuiz] = useState<VocabularyItem[]>([]);
-  const [showQuizModal, setShowQuizModal] = useState(false);
-  const [currentQuizWord, setCurrentQuizWord] = useState<VocabularyItem | null>(null);
+  const [learningProgress, setLearningProgress] = useState<{
+    newWords: number;
+    learningWords: number;
+    masteredWords: number;
+    reviewWords: number;
+  } | null>(null);
 
   useEffect(() => {
     // Set up event listeners
@@ -44,7 +47,7 @@ export const SpeedLearn: React.FC<SpeedLearnProps> = ({ storageManager }) => {
       setIsPaused(false);
       setCurrentSession(session);
       setCurrentWord(null);
-      checkForQuizWords();
+      loadLearningProgress();
     });
 
     speedLearnEngine.setOnSessionPause(() => {
@@ -56,7 +59,7 @@ export const SpeedLearn: React.FC<SpeedLearnProps> = ({ storageManager }) => {
     });
 
     // Load initial data
-    checkForQuizWords();
+    loadLearningProgress();
 
     return () => {
       if (speedLearnEngine.isSessionActive()) {
@@ -65,9 +68,9 @@ export const SpeedLearn: React.FC<SpeedLearnProps> = ({ storageManager }) => {
     };
   }, [speedLearnEngine]);
 
-  const checkForQuizWords = useCallback(async () => {
-    const quizWords = await speedLearnEngine.getWordsReadyForQuiz();
-    setWordsReadyForQuiz(quizWords);
+  const loadLearningProgress = useCallback(async () => {
+    const progress = await speedLearnEngine.getLearningProgress();
+    setLearningProgress(progress);
   }, [speedLearnEngine]);
 
   const handleStartSession = async () => {
@@ -107,25 +110,13 @@ export const SpeedLearn: React.FC<SpeedLearnProps> = ({ storageManager }) => {
     setConfig(prev => ({ ...prev, [field]: value }));
   };
 
-  const handleStartQuiz = (word: VocabularyItem) => {
-    setCurrentQuizWord(word);
-    setShowQuizModal(true);
-  };
-
-  const handleQuizComplete = async (passed: boolean) => {
-    if (currentQuizWord && passed) {
-      await speedLearnEngine.markWordAsMastered(currentQuizWord.id);
-      await checkForQuizWords();
-    }
-    setShowQuizModal(false);
-    setCurrentQuizWord(null);
-  };
-
   const handleManualMigration = async () => {
     try {
       // Force re-initialization to trigger migration
       await (storageManager.constructor as any).initialize();
       alert('Vocabulary migrated successfully! You can now start Speed Learn sessions.');
+      // Refresh progress after migration
+      await loadLearningProgress();
     } catch (error) {
       console.error('Migration failed:', error);
       alert('Migration failed. Please check the console for details.');
@@ -136,22 +127,27 @@ export const SpeedLearn: React.FC<SpeedLearnProps> = ({ storageManager }) => {
     <div className="speed-learn-container">
       <h2 className="text-xl font-bold text-gray-800 mb-4">🚀 Speed Learn</h2>
 
-      {/* Quiz Alert */}
-      {wordsReadyForQuiz.length > 0 && (
-        <div className="bg-orange-100 border-l-4 border-orange-500 p-3 mb-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h4 className="font-medium text-orange-800">Quiz Time! 🎯</h4>
-              <p className="text-sm text-orange-700">
-                {wordsReadyForQuiz.length} words ready for quiz
-              </p>
+      {/* Learning Progress */}
+      {learningProgress && (
+        <div className="bg-gradient-to-r from-green-50 to-blue-50 p-4 rounded-lg mb-4 border border-green-200">
+          <h4 className="font-medium text-gray-800 mb-3">🌱 Learning Progress</h4>
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            <div className="bg-blue-100 p-2 rounded text-center">
+              <div className="font-bold text-blue-700">{learningProgress.newWords}</div>
+              <div className="text-blue-600">New Words</div>
             </div>
-            <button
-              onClick={() => handleStartQuiz(wordsReadyForQuiz[0])}
-              className="bg-orange-500 text-white px-3 py-1 rounded text-sm hover:bg-orange-600"
-            >
-              Start Quiz
-            </button>
+            <div className="bg-yellow-100 p-2 rounded text-center">
+              <div className="font-bold text-yellow-700">{learningProgress.learningWords}</div>
+              <div className="text-yellow-600">Learning</div>
+            </div>
+            <div className="bg-green-100 p-2 rounded text-center">
+              <div className="font-bold text-green-700">{learningProgress.masteredWords}</div>
+              <div className="text-green-600">Mastered</div>
+            </div>
+            <div className="bg-purple-100 p-2 rounded text-center">
+              <div className="font-bold text-purple-700">{learningProgress.reviewWords}</div>
+              <div className="text-purple-600">Reviews</div>
+            </div>
           </div>
         </div>
       )}
@@ -314,97 +310,6 @@ export const SpeedLearn: React.FC<SpeedLearnProps> = ({ storageManager }) => {
         </div>
       )}
 
-      {/* Quiz Modal */}
-      {showQuizModal && currentQuizWord && (
-        <QuizModal
-          word={currentQuizWord}
-          onComplete={handleQuizComplete}
-          onClose={() => setShowQuizModal(false)}
-        />
-      )}
-    </div>
-  );
-};
-
-// Quiz Modal Component
-interface QuizModalProps {
-  word: VocabularyItem;
-  onComplete: (passed: boolean) => void;
-  onClose: () => void;
-}
-
-const QuizModal: React.FC<QuizModalProps> = ({ word, onComplete, onClose }) => {
-  const [userAnswer, setUserAnswer] = useState('');
-  const [showResult, setShowResult] = useState(false);
-  const [isCorrect, setIsCorrect] = useState(false);
-
-  const checkAnswer = () => {
-    const correct = userAnswer.toLowerCase().trim() === word.englishTranslation.toLowerCase().trim();
-    setIsCorrect(correct);
-    setShowResult(true);
-  };
-
-  const handleComplete = () => {
-    onComplete(isCorrect);
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white p-6 rounded-lg max-w-md w-full mx-4">
-        <h3 className="text-lg font-bold text-gray-800 mb-4">🧠 Quick Quiz</h3>
-        
-        <div className="mb-4">
-          <p className="text-sm text-gray-600 mb-2">What does this mean in English?</p>
-          <div className="text-2xl font-bold text-center py-4 bg-gray-50 rounded">
-            {word.targetLanguageWord}
-          </div>
-        </div>
-
-        {!showResult ? (
-          <div>
-            <input
-              type="text"
-              value={userAnswer}
-              onChange={(e) => setUserAnswer(e.target.value)}
-              placeholder="Type your answer..."
-              className="w-full p-2 border border-gray-300 rounded mb-4"
-              onKeyPress={(e) => e.key === 'Enter' && checkAnswer()}
-              autoFocus
-            />
-            <div className="flex space-x-2">
-              <button
-                onClick={checkAnswer}
-                className="flex-1 bg-blue-500 text-white py-2 rounded hover:bg-blue-600"
-              >
-                Check Answer
-              </button>
-              <button
-                onClick={onClose}
-                className="px-4 bg-gray-300 text-gray-700 py-2 rounded hover:bg-gray-400"
-              >
-                Skip
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div>
-            <div className={`text-center py-4 rounded mb-4 ${
-              isCorrect ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-            }`}>
-              {isCorrect ? '✅ Correct!' : '❌ Not quite'}
-              <div className="text-sm mt-2">
-                Correct answer: <strong>{word.englishTranslation}</strong>
-              </div>
-            </div>
-            <button
-              onClick={handleComplete}
-              className="w-full bg-blue-500 text-white py-2 rounded hover:bg-blue-600"
-            >
-              Continue
-            </button>
-          </div>
-        )}
-      </div>
     </div>
   );
 };
