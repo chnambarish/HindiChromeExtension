@@ -57,7 +57,7 @@ export class SpeedLearnEngine {
 
     // Get words for today's session
     this.sessionWords = await this.getSessionWords();
-    
+
     if (this.sessionWords.length === 0) {
       throw new Error('No words available for Speed Learn session');
     }
@@ -84,26 +84,70 @@ export class SpeedLearnEngine {
   }
 
   /**
+   * Start a Speed Learn session with specific vocabulary (for curriculum lessons)
+   */
+  async startSessionWithVocabulary(
+    vocabulary: VocabularyItem[],
+    config?: Partial<SpeedLearnConfig>
+  ): Promise<SpeedLearnSession> {
+    if (this.isPlaying) {
+      throw new Error('Session already in progress');
+    }
+
+    if (!vocabulary || vocabulary.length === 0) {
+      throw new Error('No vocabulary provided for session');
+    }
+
+    // Update config if provided
+    if (config) {
+      this.config = { ...this.config, ...config };
+    }
+
+    // Use provided vocabulary instead of getting from storage
+    this.sessionWords = vocabulary;
+
+    // Create session record
+    this.currentSession = {
+      id: `speed-learn-curriculum-${Date.now()}`,
+      startTime: Date.now(),
+      itemsPlayed: [],
+      repetitionsCompleted: 0,
+      completed: false
+    };
+
+    // Initialize session state
+    this.currentWordIndex = 0;
+    this.currentRepetition = 0;
+    this.isPlaying = true;
+    this.isPaused = false;
+
+    // Start playing
+    await this.playCurrentWord();
+
+    return this.currentSession;
+  }
+
+  /**
    * Get words for today's session based on Speed Learn stages
    */
   private async getSessionWords(): Promise<VocabularyItem[]> {
-    const allItems = await this.storageManager.getAllVocabulary();
-    
+    const allItems = await StorageManager.getVocabulary();
+
     console.log('Total vocabulary items:', allItems.length);
-    
+
     // Debug: Check if items have Speed Learn fields
-    const itemsWithoutSpeedLearn = allItems.filter(item => 
+    const itemsWithoutSpeedLearn = allItems.filter(item =>
       !item.srsData.speedLearnStage || item.srsData.exposureCount === undefined
     );
-    
+
     if (itemsWithoutSpeedLearn.length > 0) {
       console.warn('Found vocabulary items without Speed Learn fields:', itemsWithoutSpeedLearn.length);
       // Trigger a storage re-initialization to migrate these items
-      await this.storageManager.getAllVocabulary(); // This should trigger migration
+      await StorageManager.initialize();
     }
-    
+
     // Speed Learn focuses ONLY on new learning - no reviews!
-    const newLearningWords = allItems.filter(item => 
+    const newLearningWords = allItems.filter(item =>
       item.srsData.speedLearnStage === SpeedLearnStage.NEW ||
       item.srsData.speedLearnStage === SpeedLearnStage.PASSIVE_LEARNING
     );
@@ -228,19 +272,20 @@ export class SpeedLearnEngine {
       // Automatically mark as mastered and EXIT Speed Learn system
       updatedWord.srsData.speedLearnStage = SpeedLearnStage.MASTERED;
       updatedWord.srsData.masteredAt = Date.now();
-      
+
       // Move to traditional SRS system (Reviews tab only)
       // Speed Learn is done with this word - it now goes to Reviews tab
       updatedWord.srsData.interval = 1; // Start fresh in traditional SRS
       updatedWord.srsData.nextReviewDate = Date.now() + (24 * 60 * 60 * 1000); // Next day
       updatedWord.srsData.repetitions = 0; // Reset for traditional SRS progression
-      
+
       console.log(`Word "${updatedWord.targetLanguageWord}" mastered via Speed Learn - now in Reviews tab only`);
     } else if (updatedWord.srsData.speedLearnStage === SpeedLearnStage.NEW) {
       updatedWord.srsData.speedLearnStage = SpeedLearnStage.PASSIVE_LEARNING;
     }
 
-    await this.storageManager.updateVocabulary(updatedWord);
+    // Use static method instead of instance method
+    await StorageManager.updateVocabularyItem(updatedWord);
 
     // Add to session tracking
     if (this.currentSession && !this.currentSession.itemsPlayed.includes(word.id)) {
@@ -371,14 +416,14 @@ export class SpeedLearnEngine {
     masteredWords: number;
     totalInTraditionalReviews: number;
   }> {
-    const allItems = await this.storageManager.getAllVocabulary();
-    
+    const allItems = await StorageManager.getVocabulary();
+
     return {
       newWords: allItems.filter(item => item.srsData.speedLearnStage === SpeedLearnStage.NEW).length,
       learningWords: allItems.filter(item => item.srsData.speedLearnStage === SpeedLearnStage.PASSIVE_LEARNING).length,
       masteredWords: allItems.filter(item => item.srsData.speedLearnStage === SpeedLearnStage.MASTERED).length,
-      totalInTraditionalReviews: allItems.filter(item => 
-        item.srsData.speedLearnStage === SpeedLearnStage.MASTERED && 
+      totalInTraditionalReviews: allItems.filter(item =>
+        item.srsData.speedLearnStage === SpeedLearnStage.MASTERED &&
         item.srsData.nextReviewDate <= Date.now()
       ).length
     };

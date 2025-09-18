@@ -1,18 +1,33 @@
 import React, { useState, useEffect } from 'react';
 import { UserConfig, LearningStats, VocabularyItem } from '@/types';
 import { StorageManager } from '@/utils/storage';
+import { CurriculumManager } from '@/utils/curriculum-manager';
+import { CurriculumStorageManager } from '@/utils/curriculum-storage';
+import { DailyLesson, LessonProgress, CurriculumOverview } from '@/types/curriculum';
 
 export const OptionsApp: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'vocabulary' | 'settings' | 'stats'>('vocabulary');
+  const [activeTab, setActiveTab] = useState<'vocabulary' | 'settings' | 'stats' | 'curriculum'>('vocabulary');
   const [config, setConfig] = useState<UserConfig | null>(null);
   const [stats, setStats] = useState<LearningStats | null>(null);
   const [vocabulary, setVocabulary] = useState<VocabularyItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddForm, setShowAddForm] = useState(false);
-  const [newWord, setNewWord] = useState({ 
-    targetLanguageWord: '', 
-    englishTranslation: '', 
-    tags: '' 
+  const [newWord, setNewWord] = useState({
+    targetLanguageWord: '',
+    englishTranslation: '',
+    tags: ''
+  });
+
+  // Curriculum state
+  const [dailyLessons, setDailyLessons] = useState<DailyLesson[]>([]);
+  const [lessonProgress, setLessonProgress] = useState<LessonProgress[]>([]);
+  const [curriculumOverview, setCurriculumOverview] = useState<CurriculumOverview | null>(null);
+  const [curriculumStats, setCurriculumStats] = useState<any>(null);
+  const [showCreateCurriculum, setShowCreateCurriculum] = useState(false);
+  const [curriculumForm, setCurriculumForm] = useState({
+    totalDays: 30,
+    wordsPerDay: 10,
+    organizationStrategy: 'by_category' as const
   });
 
   useEffect(() => {
@@ -192,6 +207,12 @@ export const OptionsApp: React.FC = () => {
           📝 Vocabulary
         </button>
         <button
+          className={`nav-btn ${activeTab === 'curriculum' ? 'active' : ''}`}
+          onClick={() => setActiveTab('curriculum')}
+        >
+          📚 Curriculum
+        </button>
+        <button
           className={`nav-btn ${activeTab === 'settings' ? 'active' : ''}`}
           onClick={() => setActiveTab('settings')}
         >
@@ -353,7 +374,7 @@ export const OptionsApp: React.FC = () => {
         {activeTab === 'stats' && stats && (
           <div className="stats-section">
             <h2>Learning Statistics</h2>
-            
+
             <div className="stats-grid">
               <div className="stat-card large">
                 <span className="stat-number">{stats.totalReviews}</span>
@@ -372,12 +393,43 @@ export const OptionsApp: React.FC = () => {
             <div className="progress-section">
               <h3>Today's Progress</h3>
               <div className="progress-bar">
-                <div 
+                <div
                   className="progress-fill"
                   style={{ width: `${(stats.reviewedToday / (stats.dueToday || 1)) * 100}%` }}
                 />
               </div>
               <p>{stats.reviewedToday} of {stats.dueToday} reviews completed today</p>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'curriculum' && (
+          <div className="curriculum-section">
+            <div className="section-header">
+              <h2>🎯 Speed Learn Curriculum</h2>
+              <p className="text-gray-600">Speed Learn automatically uses HindiEasy curriculum with 31 fruit words</p>
+            </div>
+
+            <div className="bg-green-50 border border-green-200 rounded-lg p-6 mb-4">
+              <h3 className="font-medium text-green-800 mb-3">✅ System Status</h3>
+              <div className="space-y-2 text-sm text-green-700">
+                <p>🎵 Speed Learn automatically uses Source1 (HindiEasy)</p>
+                <p>🍎 31 fruit words organized into daily lessons</p>
+                <p>📚 6 words per lesson with automatic progression</p>
+                <p>� "Fruits" and "Fruits continuation" lessons</p>
+                <p>⚡ No user setup required - works automatically</p>
+              </div>
+            </div>
+
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
+              <h3 className="font-medium text-blue-800 mb-3">� How It Works</h3>
+              <div className="space-y-2 text-sm text-blue-700">
+                <p>1. Click Speed Learn in the extension popup</p>
+                <p>2. System automatically initializes HindiEasy curriculum</p>
+                <p>3. Starts with "Fruits" lesson (6 words)</p>
+                <p>4. Next session shows "Fruits continuation"</p>
+                <p>5. Continues through all 31 words automatically</p>
+              </div>
             </div>
           </div>
         )}

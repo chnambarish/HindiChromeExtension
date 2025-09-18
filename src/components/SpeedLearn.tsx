@@ -1,7 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { SpeedLearnEngine } from '../utils/speedLearn';
 import { StorageManager } from '../utils/storage';
+import { CurriculumManager } from '../utils/curriculum-manager';
+import { CurriculumStorageManager } from '../utils/curriculum-storage';
 import { VocabularyItem, SpeedLearnSession, SpeedLearnConfig } from '../types/vocabulary';
+import { DailyLesson, LessonStatus } from '../types/curriculum';
 
 interface SpeedLearnProps {
   storageManager: StorageManager;
@@ -58,6 +61,9 @@ export const SpeedLearn: React.FC<SpeedLearnProps> = ({ storageManager }) => {
       setIsPaused(false);
     });
 
+    // Initialize HindiEasy curriculum on component mount
+    initializeHindiEasyCurriculum();
+
     // Load initial data
     loadLearningProgress();
 
@@ -73,15 +79,96 @@ export const SpeedLearn: React.FC<SpeedLearnProps> = ({ storageManager }) => {
     setLearningProgress(progress);
   }, [speedLearnEngine]);
 
+  const initializeHindiEasyCurriculum = useCallback(async () => {
+    try {
+      // Check if curriculum already exists
+      const existingLessons = await CurriculumStorageManager.getDailyLessons();
+      if (existingLessons.length > 0) {
+        console.log('HindiEasy curriculum already initialized');
+        return;
+      }
+
+      // Initialize the curriculum
+      const { initializeHindiEasyCurriculum: initFunc } = await import('../utils/curriculum-demo');
+      await initFunc();
+      console.log('HindiEasy curriculum initialized successfully');
+    } catch (error) {
+      console.error('Failed to initialize HindiEasy curriculum:', error);
+    }
+  }, []);
+
   const handleStartSession = async () => {
     try {
-      const session = await speedLearnEngine.startSession(config);
+      // First, try to get the next curriculum lesson
+      let sessionVocabulary: VocabularyItem[] = [];
+      let currentLessonTitle = '';
+
+      try {
+        // Check if HindiEasy curriculum exists, if not, initialize it
+        let lessons = await CurriculumStorageManager.getDailyLessons();
+
+        if (lessons.length === 0) {
+          console.log('🍎 No curriculum found, initializing HindiEasy...');
+          // Import and initialize the curriculum
+          const { initializeHindiEasyCurriculum } = await import('../utils/curriculum-demo');
+          await initializeHindiEasyCurriculum();
+          console.log('✅ HindiEasy curriculum initialized!');
+
+          // Get the lessons again
+          lessons = await CurriculumStorageManager.getDailyLessons();
+        }
+
+        const progressData = await CurriculumStorageManager.getLessonProgress();
+
+        if (lessons.length > 0) {
+          // Find the next incomplete lesson
+          const nextLesson = lessons.find(lesson =>
+            !progressData.some(p => p.lessonId === lesson.id && p.status === 'completed')
+          );
+
+          if (nextLesson) {
+            console.log(`📚 Starting curriculum lesson: ${nextLesson.title}`);
+            sessionVocabulary = nextLesson.vocabularyItems;
+            currentLessonTitle = nextLesson.title;
+
+            // Mark lesson as in progress
+            await CurriculumStorageManager.updateLessonProgress({
+              lessonId: nextLesson.id,
+              status: LessonStatus.IN_PROGRESS,
+              wordsCompleted: 0,
+              totalWords: nextLesson.vocabularyItems.length,
+              timeSpent: 0,
+              speedLearnSessions: 0,
+              reviewSessions: 0,
+              accuracy: 0,
+              lastActivity: Date.now(),
+            });
+          }
+        }
+      } catch (curriculumError) {
+        console.log('Curriculum initialization failed, using regular vocabulary:', curriculumError);
+      }
+
+      // If no curriculum lesson found, use regular vocabulary
+      if (sessionVocabulary.length === 0) {
+        console.log('Using regular vocabulary for Speed Learn');
+        const session = await speedLearnEngine.startSession(config);
+        setCurrentSession(session);
+        setIsActive(true);
+        setIsPaused(false);
+        return;
+      }
+
+      // Start session with curriculum vocabulary
+      console.log(`🎵 Starting Speed Learn with ${sessionVocabulary.length} words from "${currentLessonTitle}"`);
+      const session = await speedLearnEngine.startSessionWithVocabulary(sessionVocabulary, config);
       setCurrentSession(session);
       setIsActive(true);
       setIsPaused(false);
+
     } catch (error) {
       console.error('Failed to start Speed Learn session:', error);
-      
+
       if (error instanceof Error && error.message.includes('No words available')) {
         alert('No vocabulary items available for Speed Learn. Please:\n\n1. Add vocabulary items in the Options page, OR\n2. Click "Migrate Vocabulary" button below if you have existing vocabulary');
       } else {
